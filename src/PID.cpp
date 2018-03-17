@@ -1,4 +1,6 @@
 #include "PID.h"
+#include <limits>
+#include <math.h>
 
 using namespace std;
 
@@ -20,7 +22,9 @@ void PID::Init(double Kp, double Ki, double Kd)
     i_error = 0;
     d_error = 0;
 
-    best_err = TotalError();
+    throttle = 0.0;
+
+    best_err = std::numeric_limits<double>::max();
 
     is_initialized = true;
 }
@@ -42,4 +46,9 @@ double PID::TotalError() {
     return Kp*p_error + Kd*d_error + Ki*i_error;
 }
 
-
+void PID::SetParams(double Kp, double Ki, double Kd)
+{
+    this->Kp = Kp;
+    this->Ki = Ki;
+    this->Kd = Kd;
+}

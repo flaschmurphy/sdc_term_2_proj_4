@@ -37,9 +37,13 @@ int main()
   // TODO: Initialize the pid variable.
 
   //DEBUG
-  std::cout << "cte,steering,p_err,i_err,d_err" << std::endl;
+  //std::cout << "cte,steering,speed,throttle,p_err,i_err,d_err" << std::endl;
 
-  h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
+  // Parameters to start and stop Twidle
+  unsigned int step = 0;
+  unsigned int N = 100;     // Max number of times to run the Twidle loop
+
+  h.onMessage([&pid, &step, &N](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -52,7 +56,7 @@ int main()
         if (event == "telemetry") {
           // j[1] is the data JSON object
           double cte = std::stod(j[1]["cte"].get<std::string>());
-//          double speed = std::stod(j[1]["speed"].get<std::string>());
+          double speed = std::stod(j[1]["speed"].get<std::string>());
 //          double angle = std::stod(j[1]["steering_angle"].get<std::string>());
           double steer_value;
           /*
@@ -72,15 +76,15 @@ int main()
           double current_err;
 
           // Values to include while Twidling 
-          std::vector<double> twidle_params;
-          twidle_params.push_back(pid.Kp);
-          twidle_params.push_back(pid.Ki);
-          twidle_params.push_back(pid.Kd);
+          std::vector<double*> twidle_params;
+          twidle_params.push_back(&pid.Kp);
+          twidle_params.push_back(&pid.Ki);
+          twidle_params.push_back(&pid.Kd);
 
           // Potential increments to Kp, Ki and Kd coefficients for Twidle algorithm
-          double increment_p = 0.1;
-          double increment_i = 0.0005;
-          double increment_d = 0.05;
+          double increment_p = 0.01;
+          double increment_i = 0.001;
+          double increment_d = 0.1;
 
           // Increments to perform while Twidling 
           std::vector<double> twidle_increments;
@@ -90,22 +94,21 @@ int main()
 
           if (!pid.is_initialized) 
           {
-              //TODO: Optimize these params
-              double init_p = 0.05;
-              double init_i = 0.0001;
-              double init_d = 0.05;
-
+              double init_p = 0.5;
+              double init_i = 0.001;
+              double init_d = 0.2;
               pid.Init(init_p, init_i, init_d);
           } 
 
           pid.UpdateError(cte);
 
           current_err = std::abs(pid.TotalError());
-          if (current_err >= pid.best_err)
+          N = 100;
+          if (step < N)
           {
               for (unsigned int i=0; i<twidle_params.size(); i++)
               {
-                  double param = twidle_params[i];
+                  double param = *twidle_params[i];
                   double increment = twidle_increments[i];
 
                   param += increment;
@@ -114,7 +117,7 @@ int main()
                   {
                       // If we get here, there was some improvement
                       pid.best_err = current_err;
-                      increment *= 1.1;
+                      increment *= 1.05;
                   }
                   else
                   {
@@ -135,6 +138,8 @@ int main()
                           increment *= 0.95;
                       }
                   }
+                  *twidle_params[i] = param;
+                  twidle_increments[i] = increment;
               }
           }
           else
@@ -142,35 +147,41 @@ int main()
               pid.best_err = current_err;
           }
 
-          // Ensure that the steering angle is within the allowed range
-          //if (current_err > 1) current_err = 1;
+          double final_err = std::abs(pid.TotalError());
 
-          // Once we reach here we should have the best params possible (local
-          // perspective). The steering angle should always be in the opposite
-          // direction to the CTE, meaning we may or may not need to change
-          // it's sign
-          if (cte >=0) {steer_value = -1 * current_err;}
-          else {steer_value = current_err;}
+          // Also increment or decrement the speed based on the magnitude of the error
+          double cte_threshold = 0.8;
+          double max_speed = 25.0;
+
+          if (std::abs(cte) > cte_threshold) 
+              pid.throttle = 0.0;
+
+          else if (speed < max_speed) 
+              pid.throttle += 0.1;
+
+          else if (speed >= max_speed) 
+              pid.throttle = 0.0;
+
+          // Once we reach here we should hopefully have the best params possible
+          // (local perspective). The steering angle should always be in the opposite
+          // direction to the CTE, meaning we may or may not need to change it's sign
+          if (cte >=0) {steer_value = -1 * final_err;}
+          else {steer_value = final_err;}
 
           // DEBUG
           std::cout 
-              //<< "CTE: " 
-              << cte 
-              //<< " Steering Value: " << steer_value 
-              << "," << steer_value 
-              << "," << -(pid.Kp * pid.p_error) 
-              << "," << -(pid.Kd * pid.d_error) 
-              << "," << -(pid.Ki * pid.i_error)
-              //<< "," << pid.p_error 
-              //<< "," << pid.i_error 
-              //<< "," << pid.d_error 
+              <<        step
+              << "," << cte 
+              << "," << final_err
+              << "," << pid.Kp
+              << "," << pid.Ki
+              << "," << pid.Kd
               << std::endl;
 
           json msgJson;
           msgJson["steering_angle"] = steer_value;
-          msgJson["throttle"] = 0.3;
+          msgJson["throttle"] = pid.throttle;
           auto msg = "42[\"steer\"," + msgJson.dump() + "]";
-          //std::cout << msg << std::endl;
           ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
         }
       } else {
@@ -179,6 +190,7 @@ int main()
         ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
       }
     }
+    step += 1;
   });
 
   // We don't need this since we're not using HTTP but if it's removed the program
