@@ -1,8 +1,9 @@
 #include <uWS/uWS.h>
 #include <iostream>
+#include <math.h>
+#include <cstdlib>
 #include "json.hpp"
 #include "PID.h"
-#include <math.h>
 
 // for convenience
 using json = nlohmann::json;
@@ -51,8 +52,8 @@ int main()
         if (event == "telemetry") {
           // j[1] is the data JSON object
           double cte = std::stod(j[1]["cte"].get<std::string>());
-          double speed = std::stod(j[1]["speed"].get<std::string>());
-          double angle = std::stod(j[1]["steering_angle"].get<std::string>());
+//          double speed = std::stod(j[1]["speed"].get<std::string>());
+//          double angle = std::stod(j[1]["steering_angle"].get<std::string>());
           double steer_value;
           /*
           * TODO: Calcuate steering value here, remember the steering 
@@ -67,25 +68,90 @@ int main()
           *   "speed":"0.4380", "cte":"0.7598","image":"/9j/4AAQ..."
           */
 
+          // Error for the current step
+          double current_err;
+
+          // Values to include while Twidling 
+          std::vector<double> twidle_params;
+          twidle_params.push_back(pid.Kp);
+          twidle_params.push_back(pid.Ki);
+          twidle_params.push_back(pid.Kd);
+
+          // Potential increments to Kp, Ki and Kd coefficients for Twidle algorithm
+          double increment_p = 0.1;
+          double increment_i = 0.0005;
+          double increment_d = 0.05;
+
+          // Increments to perform while Twidling 
+          std::vector<double> twidle_increments;
+          twidle_increments.push_back(increment_p);
+          twidle_increments.push_back(increment_i);
+          twidle_increments.push_back(increment_d);
+
           if (!pid.is_initialized) 
           {
               //TODO: Optimize these params
               double init_p = 0.05;
-              double init_i = 0.0;
+              double init_i = 0.0001;
               double init_d = 0.05;
 
               pid.Init(init_p, init_i, init_d);
           } 
 
           pid.UpdateError(cte);
-          steer_value = -1 * pid.TotalError();
+
+          current_err = std::abs(pid.TotalError());
+          if (current_err >= pid.best_err)
+          {
+              for (unsigned int i=0; i<twidle_params.size(); i++)
+              {
+                  double param = twidle_params[i];
+                  double increment = twidle_increments[i];
+
+                  param += increment;
+                  current_err = std::abs(pid.TotalError());
+                  if (current_err < pid.best_err)
+                  {
+                      // If we get here, there was some improvement
+                      pid.best_err = current_err;
+                      increment *= 1.1;
+                  }
+                  else
+                  {
+                      // If we get here, there was no improvement
+                      param -= 2*increment;
+                      current_err = std::abs(pid.TotalError());
+
+                      if (current_err < pid.best_err)
+                      {
+                          // There was an improvment
+                          pid.best_err = current_err;
+                          increment *= 1.05;
+                      }
+                      else
+                      {
+                          // There was no improvement
+                          param += increment;
+                          increment *= 0.95;
+                      }
+                  }
+              }
+          }
+          else
+          {
+              pid.best_err = current_err;
+          }
 
           // Ensure that the steering angle is within the allowed range
-          if (steer_value < -1)
-              steer_value = -1;
-          if (steer_value > 1)
-              steer_value = 1;
-          
+          //if (current_err > 1) current_err = 1;
+
+          // Once we reach here we should have the best params possible (local
+          // perspective). The steering angle should always be in the opposite
+          // direction to the CTE, meaning we may or may not need to change
+          // it's sign
+          if (cte >=0) {steer_value = -1 * current_err;}
+          else {steer_value = current_err;}
+
           // DEBUG
           std::cout 
               //<< "CTE: " 

@@ -20,6 +20,8 @@ void PID::Init(double Kp, double Ki, double Kd)
     i_error = 0;
     d_error = 0;
 
+    best_err = TotalError();
+
     is_initialized = true;
 }
 

@@ -17,6 +17,9 @@ public:
   double Ki;
   double Kd;
 
+  // Status marker for Twidle
+  double best_err;
+
   bool is_initialized = false;
 
   /*
