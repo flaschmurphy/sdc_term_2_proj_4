@@ -17,17 +17,9 @@ public:
   double Ki;
   double Kd;
 
-  // Throttle value
   double throttle;
 
-  // Status marker for Twidle
-  double best_err;
-
-  // Gets set to true after the 1st data
   bool is_initialized = false;
-
-  // Tracks the previous cte
-  double previous_cte;
 
   /*
   * Constructor
@@ -53,12 +45,6 @@ public:
   * Calculate the total PID error.
   */
   double TotalError();
-
-  /*
-  * Set new values for params
-  */
-  void SetParams(double Kp, double Ki, double Kd);
-
 };
 
 #endif /* PID_H */

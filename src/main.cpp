@@ -1,9 +1,8 @@
 #include <uWS/uWS.h>
 #include <iostream>
-#include <math.h>
-#include <cstdlib>
 #include "json.hpp"
 #include "PID.h"
+#include <math.h>
 
 // for convenience
 using json = nlohmann::json;
@@ -36,14 +35,7 @@ int main()
   PID pid;
   // TODO: Initialize the pid variable.
 
-  //DEBUG
-  //std::cout << "cte,steering,speed,throttle,p_err,i_err,d_err" << std::endl;
-
-  // Parameters to start and stop Twidle
-  unsigned int step = 0;
-  unsigned int N;     // Max number of times to run the Twidle loop
-
-  h.onMessage([&pid, &step, &N](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
+  h.onMessage([&pid](uWS::WebSocket<uWS::SERVER> ws, char *data, size_t length, uWS::OpCode opCode) {
     // "42" at the start of the message means there's a websocket message event.
     // The 4 signifies a websocket message
     // The 2 signifies a websocket event
@@ -67,115 +59,52 @@ int main()
           */
 
           /* 
-           * Sample data:
-           *   {"steering_angle":"0.0000","throttle":"0.0000",
-           *   "speed":"0.4380", "cte":"0.7598","image":"/9j/4AAQ..."
-           */
+          * Sample data:
+          *   {"steering_angle":"0.0000","throttle":"0.0000",
+          *   "speed":"0.4380", "cte":"0.7598","image":"/9j/4AAQ..."
+          */
 
           if (!pid.is_initialized) 
           {
-              double init_p = 0.5;
-              double init_i = 0.001;
-              double init_d = 0.5;
+              double init_p = 0.1;
+              double init_i = 0.005;
+              double init_d = 3.0;
+
               pid.Init(init_p, init_i, init_d);
           } 
 
-          // Error for the current step
-          double current_err;
-
-          // Values to include in Twidle 
-          std::vector<double*> twidle_params;
-          twidle_params.push_back(&pid.Kp);
-          twidle_params.push_back(&pid.Ki);
-          twidle_params.push_back(&pid.Kd);
-
-          // Potential increments to Kp, Ki and Kd coefficients for Twidle
-          double increment_p = 0.01;
-          double increment_i = 0.001;
-          double increment_d = 0.1;
-
-          // Increments to perform in Twidle 
-          std::vector<double> twidle_increments;
-          twidle_increments.push_back(increment_p);
-          twidle_increments.push_back(increment_i);
-          twidle_increments.push_back(increment_d);
-
           pid.UpdateError(cte);
-          current_err = std::abs(pid.TotalError());
-
-          N = 100;
-
-          if (step < N)
-          {
-              for (unsigned int i=0; i<twidle_params.size(); i++)
-              {
-                  double param = *twidle_params[i];
-                  double increment = twidle_increments[i];
-
-                  param += increment;
-                  current_err = std::abs(pid.TotalError());
-
-                  if (current_err < pid.best_err)
-                  {
-                      // If we get here, there was some improvement
-                      pid.best_err = current_err;
-                      increment *= 1.1;
-                  }
-                  else
-                  {
-                      // If we get here, there was no improvement
-                      param -= 2*increment;
-                      current_err = std::abs(pid.TotalError());
-
-                      if (current_err < pid.best_err)
-                      {
-                          // If we get here, there was some improvement
-                          pid.best_err = current_err;
-                          increment *= 1.1;
-                      }
-                      else
-                      {
-                          // If we get here, there was no improvement
-                          param += increment;
-                          increment *= 0.5;
-                      }
-                  }
-                  *twidle_params[i] = param;
-                  twidle_increments[i] = increment;
-              }
-          }
-
-          pid.UpdateError(cte);
-          double final_err = std::abs(pid.TotalError());
+          steer_value = -1 * pid.TotalError();
 
           // Also increment or decrement the speed based on the magnitude of the error
           double cte_threshold = 0.8;
-          double max_speed = 20.0;
+          double max_speed = 30.0;
 
-          if (std::abs(cte) > cte_threshold) 
+          if (std::abs(cte) > cte_threshold)
+          {
               pid.throttle = 0.0;
+              steer_value *= 2.0;
+          }
 
-          else if (speed < max_speed) 
+          else if (speed < max_speed)
               pid.throttle += 0.1;
 
-          else if (speed >= max_speed) 
+          else if (speed >= max_speed)
               pid.throttle = 0.0;
 
-          // Once we reach here we should hopefully have the best params possible
-          // (local perspective). The steering angle should always be in the opposite
-          // direction to the CTE, meaning we may or may not need to change it's sign
-          if (cte >=0) {steer_value = -1 * final_err;}
-          else {steer_value = final_err;}
-
+          // Ensure that the steering angle is within the allowed range
+          if (steer_value < -1)
+              steer_value = -1;
+          if (steer_value > 1)
+              steer_value = 1;
+          
           // DEBUG
           std::cout 
-              <<        step
-              << "," << cte 
-              << "," << final_err
-              << "," << pid.Kp
-              << "," << pid.Ki
-              << "," << pid.Kd
-              << "," << pid.best_err
+              << cte 
+              << "," << steer_value 
+              << "," << pid.p_error
+              << "," << pid.i_error
+              << "," << pid.d_error
               << std::endl;
 
           json msgJson;
@@ -190,7 +119,6 @@ int main()
         ws.send(msg.data(), msg.length(), uWS::OpCode::TEXT);
       }
     }
-    step += 1;
   });
 
   // We don't need this since we're not using HTTP but if it's removed the program
