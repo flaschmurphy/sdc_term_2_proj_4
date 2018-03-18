@@ -27,23 +27,29 @@ void PID::Init(double Kp, double Ki, double Kd)
     best_err = std::numeric_limits<double>::max();
 
     is_initialized = true;
+
+    previous_cte = 0;
 }
 
-void PID::UpdateError(double cte) {
-
-    // Update the differential error
-    d_error = cte - p_error;
+void PID::UpdateError(double cte) 
+{
+    cte = std::abs(cte);
 
     // Update the proportional error
-    p_error = cte;
+    p_error = Kp * cte;
 
     // Update the integral error
-    i_error += cte;
+    i_error = Ki * (i_error + cte);
+
+    // Update the differential error
+    d_error = Kd * (std::abs(cte - previous_cte));
+    previous_cte = cte;
 
 }
 
-double PID::TotalError() {
-    return Kp*p_error + Kd*d_error + Ki*i_error;
+double PID::TotalError() 
+{
+    return p_error + i_error + d_error;
 }
 
 void PID::SetParams(double Kp, double Ki, double Kd)
