@@ -71,6 +71,8 @@ int main()
               double init_d = 3.0;
 
               pid.Init(init_p, init_i, init_d);
+
+              std::cout << "cte,steering,p_error,i_error,d_error,speed" << std::endl;
           } 
 
           pid.UpdateError(cte);
@@ -105,6 +107,7 @@ int main()
               << "," << pid.p_error
               << "," << pid.i_error
               << "," << pid.d_error
+              << "," << speed
               << std::endl;
 
           json msgJson;
