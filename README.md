@@ -120,7 +120,7 @@ in cases where the throttle was not being applied. Therefore the steps are:
 * If the CTE is above a pre-defined threshold (set to 0.8), set the throttle to
   zero and double the steering value
 * If the car is within the CTE threshold and below the speed limit, increase
-  the throttle by 10%
+  the throttle by 0.1.
 
 The code section for this is visible in `main.cpp`:
 
